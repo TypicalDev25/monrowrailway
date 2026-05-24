@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -27,7 +28,16 @@ app.use(express.json());
 
 // SQLite setup
 const dbPath = path.join(__dirname, '..', 'database.sqlite');
+const dbDir = path.dirname(dbPath);
+
+// Ensure database directory exists
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+  console.log(`Created database directory: ${dbDir}`);
+}
+
 const db = new sqlite3.Database(dbPath);
+console.log(`Connecting to database: ${dbPath}`);
 
 db.serialize(() => {
   db.run(`
