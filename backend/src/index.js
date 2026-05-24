@@ -27,7 +27,10 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // SQLite setup
-const dbPath = path.join(__dirname, '..', 'database.sqlite');
+// Use absolute path to match volume mount at /app/backend
+const dbPath = process.env.NODE_ENV === 'production' 
+  ? '/app/backend/database.sqlite'
+  : path.join(__dirname, '..', 'database.sqlite');
 const dbDir = path.dirname(dbPath);
 
 // Ensure database directory exists
