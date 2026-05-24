@@ -1,0 +1,29 @@
+services:
+  # Backend Service
+  - type: web
+    name: finance-backend
+    env: node
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    rootDir: backend
+    envVars:
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 4000
+    healthCheckPath: /api/health
+
+  # Frontend Service
+  - type: web
+    name: finance-frontend
+    env: static
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    rootDir: frontend
+    envVars:
+      - key: VITE_API_URL
+        sync: false
