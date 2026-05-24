@@ -1145,7 +1145,7 @@ const frontendDistPath = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(frontendDistPath));
 
 // Fallback to React index.html for client-side routing
-app.get('*', (req, res) => {
+app.get(/.*/i, (req, res) => {
   res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
 
