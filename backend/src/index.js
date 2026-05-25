@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -26,190 +26,132 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// SQLite setup
-// Use absolute path to match volume mount at /app/backend
-const dbPath = process.env.NODE_ENV === 'production' 
-  ? '/app/backend/database.sqlite'
-  : path.join(__dirname, '..', 'database.sqlite');
-const dbDir = path.dirname(dbPath);
+// PostgreSQL setup
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-// Ensure database directory exists
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-  console.log(`Created database directory: ${dbDir}`);
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
+
+const query = (text, params) => pool.query(text, params);
+
+// Initialize database schema
+async function initializeDatabase() {
+  try {
+    // Create tables
+    await query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        full_name TEXT,
+        designation TEXT,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'employee')),
+        is_deleted INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS proposals (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL REFERENCES users(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        amount DECIMAL(10,2) NOT NULL,
+        category TEXT,
+        use_date TEXT NOT NULL,
+        month TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        decided_at TIMESTAMP,
+        decided_by INTEGER REFERENCES users(id)
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER REFERENCES proposals(id),
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL CHECK (type IN ('BUDGET', 'EXPENSE', 'INCOME')),
+        amount DECIMAL(10,2) NOT NULL,
+        description TEXT,
+        date TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS deletion_requests (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        requested_by INTEGER NOT NULL REFERENCES users(id),
+        approved_by INTEGER REFERENCES users(id),
+        status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        decided_at TIMESTAMP
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS lots (
+        id SERIAL PRIMARY KEY,
+        address TEXT NOT NULL,
+        city_municipality TEXT NOT NULL CHECK (city_municipality IN ('Koronadal City', 'Surallah')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS lot_sales (
+        id SERIAL PRIMARY KEY,
+        lot_id INTEGER NOT NULL REFERENCES lots(id),
+        sold_by INTEGER NOT NULL REFERENCES users(id),
+        receipt_no TEXT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        buyer_name TEXT NOT NULL,
+        remarks TEXT,
+        buying_process TEXT NOT NULL,
+        applicant_status TEXT NOT NULL CHECK (applicant_status IN ('New applicant', 'Member')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS remittances (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER NOT NULL REFERENCES users(id),
+        collection TEXT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        date TEXT NOT NULL,
+        receipt_no TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('Database tables created successfully');
+
+    // Seed default admin if none exists
+    const adminCheck = await query(`SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_deleted = 0`);
+    if (adminCheck.rows[0].count === 0) {
+      const passwordHash = bcrypt.hashSync('admin123', 10);
+      await query(
+        `INSERT INTO users (username, password_hash, full_name, designation, role) VALUES ($1, $2, $3, $4, 'admin')`,
+        ['admin', passwordHash, 'Default Admin', 'Koronadal']
+      );
+      console.log('Seeded default admin user: username=admin, password=admin123');
+    }
+  } catch (err) {
+    console.error('Error initializing database:', err);
+  }
 }
 
-const db = new sqlite3.Database(dbPath);
-console.log(`Connecting to database: ${dbPath}`);
-
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      full_name TEXT,
-      designation TEXT,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'employee')),
-      is_deleted INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS proposals (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      employee_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      amount REAL NOT NULL,
-      category TEXT,
-      use_date TEXT NOT NULL,
-      month TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      decided_at TEXT,
-      decided_by INTEGER,
-      FOREIGN KEY(employee_id) REFERENCES users(id),
-      FOREIGN KEY(decided_by) REFERENCES users(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      proposal_id INTEGER,
-      created_by INTEGER NOT NULL,
-      type TEXT NOT NULL CHECK (type IN ('BUDGET', 'EXPENSE', 'INCOME')),
-      amount REAL NOT NULL,
-      description TEXT,
-      date TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(proposal_id) REFERENCES proposals(id),
-      FOREIGN KEY(created_by) REFERENCES users(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS deletion_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      requested_by INTEGER NOT NULL,
-      approved_by INTEGER,
-      status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
-      created_at TEXT NOT NULL,
-      decided_at TEXT,
-      FOREIGN KEY(user_id) REFERENCES users(id),
-      FOREIGN KEY(requested_by) REFERENCES users(id),
-      FOREIGN KEY(approved_by) REFERENCES users(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS lots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      address TEXT NOT NULL,
-      city_municipality TEXT NOT NULL CHECK (city_municipality IN ('Koronadal City', 'Surallah')),
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS lot_sales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      lot_id INTEGER NOT NULL,
-      sold_by INTEGER NOT NULL,
-      receipt_no TEXT NOT NULL,
-      amount REAL NOT NULL,
-      buyer_name TEXT NOT NULL,
-      remarks TEXT,
-      buying_process TEXT NOT NULL,
-      applicant_status TEXT NOT NULL CHECK (applicant_status IN ('New applicant', 'Member')),
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(lot_id) REFERENCES lots(id),
-      FOREIGN KEY(sold_by) REFERENCES users(id)
-    )
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS remittances (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      employee_id INTEGER NOT NULL,
-      collection TEXT NOT NULL,
-      amount REAL NOT NULL,
-      date TEXT NOT NULL,
-      receipt_no TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(employee_id) REFERENCES users(id)
-    )
-  `);
-
-  // Seed default admin if none exists
-  db.get(`SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_deleted = 0`, (err, row) => {
-    if (err) {
-      console.error('Error checking admin user:', err);
-      return;
-    }
-    if (row.count === 0) {
-      const passwordHash = bcrypt.hashSync('admin123', 10);
-      const now = new Date().toISOString();
-      db.run(
-        `INSERT INTO users (username, password_hash, full_name, designation, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)`,
-        ['admin', passwordHash, 'Default Admin', 'Koronadal', now],
-        (insertErr) => {
-          if (insertErr) {
-            console.error('Error seeding admin user:', insertErr);
-          } else {
-            console.log('Seeded default admin user: username=admin, password=admin123');
-          }
-        }
-      );
-    }
-  });
-
-  // Lightweight migrations for existing databases: add missing columns
-  db.all(`PRAGMA table_info(users)`, (err, rows) => {
-    if (err) {
-      console.error('Error reading users schema:', err);
-      return;
-    }
-    const cols = rows.map((r) => r.name);
-    if (!cols.includes('full_name')) {
-      db.run(`ALTER TABLE users ADD COLUMN full_name TEXT`, (e) => {
-        if (e) console.error('Error adding full_name column to users:', e);
-      });
-    }
-    if (!cols.includes('designation')) {
-      db.run(`ALTER TABLE users ADD COLUMN designation TEXT`, (e) => {
-        if (e) console.error('Error adding designation column to users:', e);
-      });
-    }
-    if (!cols.includes('is_deleted')) {
-      db.run(`ALTER TABLE users ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`, (e) => {
-        if (e) console.error('Error adding is_deleted column to users:', e);
-      });
-    }
-  });
-
-  db.all(`PRAGMA table_info(proposals)`, (err, rows) => {
-    if (err) {
-      console.error('Error reading proposals schema:', err);
-      return;
-    }
-    const cols = rows.map((r) => r.name);
-    if (!cols.includes('use_date')) {
-      db.run(`ALTER TABLE proposals ADD COLUMN use_date TEXT`, (e) => {
-        if (e) console.error('Error adding use_date column to proposals:', e);
-      });
-    }
-    if (!cols.includes('month')) {
-      db.run(`ALTER TABLE proposals ADD COLUMN month TEXT`, (e) => {
-        if (e) console.error('Error adding month column to proposals:', e);
-      });
-    }
-  });
-});
+initializeDatabase();
 
 // Helpers
 function generateToken(user) {
@@ -254,17 +196,16 @@ function requireAdmin(req, res, next) {
 }
 
 // Auth routes
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password are required' });
   }
 
-  db.get(`SELECT * FROM users WHERE username = ? AND is_deleted = 0`, [username], (err, user) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ message: 'Database error' });
-    }
+  try {
+    const result = await query(`SELECT * FROM users WHERE username = $1 AND is_deleted = 0`, [username]);
+    const user = result.rows[0];
+    
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -283,32 +224,34 @@ app.post('/api/auth/login', (req, res) => {
         designation: user.designation,
       },
     });
-  });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Database error' });
+  }
 });
 
 // Admin: create employee accounts
-app.post('/api/admin/users', authMiddleware, requireAdmin, (req, res) => {
+app.post('/api/admin/users', authMiddleware, requireAdmin, async (req, res) => {
   const { username, password, role, full_name, designation } = req.body;
   if (!username || !password || !full_name || !designation) {
     return res.status(400).json({ message: 'Username, password, full name and designation are required' });
   }
   const userRole = role === 'admin' ? 'admin' : 'employee';
   const passwordHash = bcrypt.hashSync(password, 10);
-  const now = new Date().toISOString();
-  db.run(
-    `INSERT INTO users (username, password_hash, full_name, designation, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-    [username, passwordHash, full_name, designation, userRole, now],
-    function (err) {
-      if (err) {
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({ message: 'Username already exists' });
-        }
-        console.error(err);
-        return res.status(500).json({ message: 'Database error' });
-      }
-      res.status(201).json({ id: this.lastID, username, full_name, designation, role: userRole });
+
+  try {
+    const result = await query(
+      `INSERT INTO users (username, password_hash, full_name, designation, role) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [username, passwordHash, full_name, designation, userRole]
+    );
+    res.status(201).json({ id: result.rows[0].id, username, full_name, designation, role: userRole });
+  } catch (err) {
+    if (err.code === '23505') { // Unique constraint violation
+      return res.status(400).json({ message: 'Username already exists' });
     }
-  );
+    console.error(err);
+    return res.status(500).json({ message: 'Database error' });
+  }
 });
 
 const PROPOSAL_CATEGORIES = ['Transportation', 'Meals', 'Office Supplies', 'Miscellaneous'];
