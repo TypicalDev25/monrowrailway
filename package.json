@@ -3,8 +3,15 @@
   "version": "1.0.0",
   "description": "MoonRow Real Estate Finance Management System",
   "private": true,
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.11.3"
+  },
   "scripts": {
-    "build": "cd frontend && npm install && npm run build && cd ../backend && npm install",
+    "build": "cd frontend && npm install && npm run build",
     "start": "cd backend && npm start"
   },
   "engines": {
