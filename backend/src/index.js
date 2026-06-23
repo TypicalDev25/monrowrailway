@@ -938,6 +938,22 @@ app.get('/api/remittances', authMiddleware, async (req, res) => {
   }
 });
 
+app.post('/api/reseed-admin', async (req, res) => {
+  try {
+    const passwordHash = bcrypt.hashSync('admin123', 10);
+    await query(
+      `INSERT INTO users (username, password_hash, full_name, designation, role)
+       VALUES ($1, $2, $3, $4, 'admin')
+       ON CONFLICT (username) DO UPDATE SET password_hash = $2, is_deleted = 0`,
+      ['admin', passwordHash, 'Default Admin', 'Koronadal']
+    );
+    res.json({ message: 'Admin reseeded. Login with admin/admin123' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to reseed admin' });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
