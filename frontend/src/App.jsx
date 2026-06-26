@@ -552,7 +552,6 @@ function EmployeeDashboard() {
               <h2>Your Budget Proposals</h2>
               <div className="button-group">
                 <button onClick={() => setFormOpen(true)}>New Proposal</button>
-                <button onClick={() => setRemittanceFormOpen(true)}>Add Remittance</button>
               </div>
             </div>
             {error && <div className="error">{error}</div>}
@@ -743,7 +742,7 @@ function EmployeeDashboard() {
                 </table>
                 {remittances.length === 0 && (
                   <div className="empty-state">
-                    <p>No remittance records found. Click "Add Remittance" to create your first record.</p>
+                    <p>No remittance records found.</p>
                   </div>
                 )}
               </div>
