@@ -573,7 +573,7 @@ function EmployeeDashboard() {
                     {proposals.map((p) => (
                       <tr key={p.id}>
                         <td>{p.use_date ? new Date(p.use_date).toLocaleDateString() : '-'}</td>
-                        <td>₱{p.amount.toFixed(2)}</td>
+                        <td>₱{Number(p.amount).toFixed(2)}</td>
                         <td>{p.category || '-'}</td>
                         <td>
                           <span className={`status-pill status-${p.status.toLowerCase()}`}>
@@ -1596,7 +1596,7 @@ function AdminDashboard() {
                       <td>{p.employee_full_name || p.employee_username}</td>
                       <td>{p.employee_designation || '-'}</td>
                       <td>{p.use_date ? new Date(p.use_date).toLocaleDateString() : '-'}</td>
-                      <td>₱{p.amount.toFixed(2)}</td>
+                      <td>₱{Number(p.amount).toFixed(2)}</td>
                       <td>{p.category}</td>
                       <td>
                         <span className={`status-pill status-${p.status.toLowerCase()}`}>
