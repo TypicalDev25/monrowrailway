@@ -150,7 +150,7 @@ function LoginPage() {
     <div className="app-shell">
       <div className="auth-card">
         <div className="auth-card-header">
-          <h1>MoonRow Real Estate</h1>
+          <h1>A&amp;E Real Estate</h1>
           <button
             type="button"
             className="secondary theme-toggle"
@@ -649,6 +649,49 @@ function EmployeeDashboard() {
                 </div>
               </div>
             )}
+          </>
+        )}
+
+        {empTab === 'remittances' && (
+          <>
+            <div className="section-header">
+              <h2>Remittance Collection Records</h2>
+              <button onClick={() => setRemittanceFormOpen(true)}>Add Remittance</button>
+            </div>
+            {error && <div className="error">{error}</div>}
+            {remittancesLoading ? (
+              <p>Loading...</p>
+            ) : (
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Collection</th>
+                      <th>Amount</th>
+                      <th>Date</th>
+                      <th>Receipt #</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {remittances.map((r) => (
+                      <tr key={r.id}>
+                        <td>{r.collection}</td>
+                        <td>₱{r.amount.toFixed(2)}</td>
+                        <td>{r.date ? new Date(r.date).toLocaleDateString() : '-'}</td>
+                        <td>{r.receipt_no}</td>
+                        <td>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {remittances.length === 0 && (
+                  <div className="empty-state">
+                    <p>No remittance records found.</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {remittanceFormOpen && (
               <div className="modal-backdrop" onClick={() => setRemittanceFormOpen(false)}>
@@ -702,49 +745,6 @@ function EmployeeDashboard() {
                     </div>
                   </form>
                 </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {empTab === 'remittances' && (
-          <>
-            <div className="section-header">
-              <h2>Remittance Collection Records</h2>
-              <button onClick={() => setRemittanceFormOpen(true)}>Add Remittance</button>
-            </div>
-            {error && <div className="error">{error}</div>}
-            {remittancesLoading ? (
-              <p>Loading...</p>
-            ) : (
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Collection</th>
-                      <th>Amount</th>
-                      <th>Date</th>
-                      <th>Receipt #</th>
-                      <th>Created</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {remittances.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.collection}</td>
-                        <td>₱{r.amount.toFixed(2)}</td>
-                        <td>{r.date ? new Date(r.date).toLocaleDateString() : '-'}</td>
-                        <td>{r.receipt_no}</td>
-                        <td>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {remittances.length === 0 && (
-                  <div className="empty-state">
-                    <p>No remittance records found.</p>
-                  </div>
-                )}
               </div>
             )}
           </>
@@ -1716,7 +1716,7 @@ function AdminDashboard() {
                     <tr key={t.id}>
                       <td>{new Date(t.date).toLocaleDateString()}</td>
                       <td>{t.type}</td>
-                      <td>₱{t.amount.toFixed(2)}</td>
+                      <td>₱{Number(t.amount).toFixed(2)}</td>
                       <td>{t.description}</td>
                       <td>{t.proposal_title || '-'}</td>
                       <td>{t.proposed_by_name || '-'}</td>
